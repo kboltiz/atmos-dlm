@@ -1,0 +1,35 @@
+-- This is just me exploring Layers in pico-lua
+-- I plan to use it later.
+
+require "atmos.env.pico"
+val pico = require "pico"
+
+pico.zet.window @{ title="Layer Test", dim=@{'!', w=300, h=400} }
+pico.zet.view   @{ dim=@{'!', w=300, h=400}, grid=false }
+pico.zet.expert(true)
+
+`pico.layer.empty("bg",   {w=300, h=400})`
+`pico.layer.empty("game", {w=300, h=400})`
+
+func Test () {
+    every :draw {
+        ;; draw red bg - no clear, just paint
+        `pico.set.layer("bg")`
+        pico.zet.color.draw @{r=255, g=0, b=0}
+        pico.output.draw.rect @{'!', x=0, y=0, w=300, h=400, anchor='NW'}
+
+        ;; draw blue rect on game layer - no clear
+        `pico.set.layer("game")`
+        pico.zet.color.draw @{r=0, g=0, b=255}
+        pico.output.draw.rect @{'!', x=100, y=100, w=100, h=100, anchor='NW'}
+
+        ;; composite onto world
+        `pico.set.layer()`
+        pico.output.clear()
+        pico.output.draw.layer("bg",   @{'!', x=0, y=0, w=300, h=400, anchor='NW'})
+        pico.output.draw.layer("game", @{'!', x=0, y=0, w=300, h=400, anchor='NW'})
+    }
+}
+
+spawn Test()
+await(false)
