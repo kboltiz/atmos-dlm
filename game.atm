@@ -1,0 +1,229 @@
+func GameSession () {
+    set lives         = 3
+    set score         = 0
+    set droids_killed = 0
+    set shake_frames  = 0
+    set player_row    = 2
+    set visual_x      = ROW_X[2]
+    set droid_speed   = DROID_SPEED_INIT
+
+    play_sound("sounds/start.wav")
+
+    func take_life () {
+        set lives = (lives - 1)
+        set shake_frames = 20
+        if (lives <= 0) {
+            play_sound("sounds/lose.wav")
+            emit[:global](:dead)
+        } else {
+            play_sound("sounds/damage.wav")
+        }
+    }
+
+    func try_hit_dot (droids, dot_key) {
+        var hit       = false
+        var destroyed = false
+        loop _,t in droids {
+            val info = t.pub
+            if (info && ((info.row == player_row) && info.dots[dot_key])) {
+                set info.dots[dot_key] = nil
+                set t.pub = info
+                set hit = true
+                if (next(info.dots) == nil) {
+                    set t.pub         = nil
+                    set score         = (score + 1)
+                    set droids_killed = (droids_killed + 1)
+                    set destroyed     = true
+                    check_speed_bump()
+                }
+            }
+        }
+        if (hit && destroyed) {
+            play_sound("sounds/destroy.wav")
+        } else {
+            if hit { play_sound("sounds/hit.wav") }
+        }
+        hit
+    }
+
+    func draw_scene (droids, ox, oy) {
+        pico.zet.color.draw @{r=20, g=20, b=20}
+        pico.output.draw.rect @{ '%', x=0.0, y=0.0, w=1.0, h=1.0, anchor='NW' }
+
+        loop i in 3 {
+            pico.zet.color.draw(
+                if (i == player_row) => @{r=60, g=60, b=100} => @{r=40, g=40, b=40}
+            )
+            pico.output.draw.rect @{
+                '%', x=((ROW_X[i] / 300.0) + ox), y=oy,
+                w=(BLOCK / 300.0), h=1.0, anchor='N'
+            }
+        }
+
+        loop _,t in droids {
+            val info = t.pub
+            if info {
+                val xpct = (ROW_X[info.row] / 300.0)
+                val ypct = (info.yy / 400.0)
+                val bpct = (BLOCK / 300.0)
+                val dpct = (bpct / 5.0)
+                val hpct = (bpct / 2.0)
+
+                pico.zet.color.draw @{r=180, g=40, b=40}
+                pico.output.draw.rect @{
+                    '%', x=(xpct + ox), y=(ypct + oy), w=bpct, h=bpct, anchor='N'
+                }
+
+                if info.dots.top {
+                    pico.zet.color.draw(DOT_COLORS.top)
+                    pico.output.draw.oval @{
+                        '%', x=(xpct + ox), y=(ypct + (oy + dpct)), w=dpct, h=dpct
+                    }
+                }
+                if info.dots.bottom {
+                    pico.zet.color.draw(DOT_COLORS.bottom)
+                    pico.output.draw.oval @{
+                        '%', x=(xpct + ox), y=(ypct + (oy + (bpct - dpct))), w=dpct, h=dpct
+                    }
+                }
+                if info.dots.left {
+                    pico.zet.color.draw(DOT_COLORS.left)
+                    pico.output.draw.oval @{
+                        '%', x=((xpct + ox) - (hpct - dpct)), y=(ypct + (oy + hpct)), w=dpct, h=dpct
+                    }
+                }
+                if info.dots.right {
+                    pico.zet.color.draw(DOT_COLORS.right)
+                    pico.output.draw.oval @{
+                        '%', x=((xpct + ox) + (hpct - dpct)), y=(ypct + (oy + hpct)), w=dpct, h=dpct
+                    }
+                }
+            }
+        }
+
+        pico.zet.color.draw :white
+        pico.output.draw.rect @{
+            '%', x=((visual_x / 300.0) + ox), y=((PLAYER_Y / 400.0) + oy),
+            w=(BLOCK / 300.0), h=(BLOCK / 400.0), anchor='N'
+        }
+    }
+
+    func draw_hud (elapsed) {
+		pico.zet.color.draw :white
+		pico.output.draw.text(("LIVES: "  ++ lives),         @{ '!', x=10,  y=10,  h=12, anchor='NW' })
+		pico.output.draw.text(("SCORE: "  ++ score),         @{ '!', x=160, y=10,  h=12, anchor='NW' })
+		pico.output.draw.text(("KILLED: " ++ droids_killed), @{ '!', x=10,  y=25,  h=10, anchor='NW' })
+		pico.output.draw.text(fmt_time(elapsed),              @{ '!', x=150, y=385, h=12 })
+
+		pico.zet.color.draw(DOT_COLORS.top)
+		pico.output.draw.text("W", @{ '!', x=5,  y=375, h=10, anchor='NW' })
+		pico.zet.color.draw(DOT_COLORS.bottom)
+		pico.output.draw.text("S", @{ '!', x=18, y=375, h=10, anchor='NW' })
+		pico.zet.color.draw(DOT_COLORS.left)
+		pico.output.draw.text("A", @{ '!', x=31, y=375, h=10, anchor='NW' })
+		pico.zet.color.draw(DOT_COLORS.right)
+		pico.output.draw.text("D", @{ '!', x=44, y=375, h=10, anchor='NW' })
+		pico.zet.color.draw :white
+		pico.output.draw.text("← → move   SPACE=clear row", @{ '!', x=150, y=375, h=9 })
+	}
+
+    func Shake () {
+        set pub = @{ x=0.0, y=0.0 }
+        par {
+            every _,_ in :clock {
+                if (shake_frames > 0) {
+                    set shake_frames = (shake_frames - 1)
+                    set pub = @{
+                        x=(math.random(-4, 4) / 300.0),
+                        y=(math.random(-4, 4) / 400.0)
+                    }
+                } else {
+                    set pub = @{ x=0.0, y=0.0 }
+                }
+            }
+        } with {
+            every _,ms in :clock {
+                set visual_x = (visual_x + ((ROW_X[player_row] - visual_x) * VISUAL_X_SPEED))
+            }
+        }
+    }
+
+    func Droid (row) {
+        var yy   = SPAWN_Y
+        var dots = @{}
+        val sides = shuffle_sides()
+        loop i in math.random(1,4) {
+            set dots[sides[i]] = true
+        }
+        set pub = @{ row=row, yy=yy, dots=dots }
+
+        do :droid_done {
+            every _,ms in :clock {
+                if (pub != nil) {
+                    set yy  = (yy + (ms * droid_speed))
+                    set pub = @{ row=row, yy=yy, dots=dots }
+                    if (yy >= FLOOR_Y) {
+                        set pub = nil
+                        take_life()
+                        escape(:droid_done)
+                    }
+                } else {
+                    escape(:droid_done)
+                }
+            }
+        }
+    }
+
+    func Spawner (droids) {
+        every @1 {
+            spawn [droids] Droid(math.random(1,3))
+        }
+    }
+
+    func Zapper (droids) {
+        every e in :key.dn {
+            match e.key {
+                :Space => {
+                    var hit = false
+                    loop _,t in droids {
+                        val info = t.pub
+                        if (info && (info.row == player_row)) {
+                            set t.pub         = nil
+                            set score         = (score + 5)
+                            set droids_killed = (droids_killed + 1)
+                            set hit           = true
+                            check_speed_bump()
+                        }
+                    }
+                    if hit { play_sound("sounds/destroy.wav") }
+                }
+                :W => { if !(try_hit_dot(droids, :top))    { take_life() } }
+                :S => { if !(try_hit_dot(droids, :bottom)) { take_life() } }
+                :A => { if !(try_hit_dot(droids, :left))   { take_life() } }
+                :D => { if !(try_hit_dot(droids, :right))  { take_life() } }
+                :Left  => { if (player_row > 1) { set player_row = (player_row - 1) } }
+                :Right => { if (player_row < 3) { set player_row = (player_row + 1) } }
+            }
+        }
+    }
+
+    pin droids = tasks()
+
+    spawn [droids] Zapper(droids)
+    spawn [droids] Spawner(droids)
+
+    val t_start = env.now
+
+    watching :dead {
+        pin shake = spawn Shake()
+        every :draw {
+            val s = shake.pub
+            draw_scene(droids, s.x, s.y)
+            draw_hud((env.now - t_start))
+        }
+    }
+
+    (env.now - t_start)
+}
+
+GameSession
