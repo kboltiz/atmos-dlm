@@ -3,32 +3,43 @@ val pico = require "pico"
 
 `_G.pico = pico`
 
-`dofile("state.lua")`
-
 pico.zet.window @{ title="Droidland Mage", dim=@{'!', w=300, h=400} }
 pico.zet.view   @{ dim=@{'!', w=300, h=400}, grid=false }
 pico.zet.expert(true, 40)
 
-;; ============================================================
-;; PATTERN 3 - Signaling Mechanisms
-;; Tasks communicate via emit[:global] without holding
-;; references to each other. Droid emits :dead, Zapper emits
-;; :zap — neither knows who is listening.
-;; ============================================================
+val SPAWN_Y          = -40
+val FLOOR_Y          = 400
+val BLOCK            = 30
+val PLAYER_Y         = 350
+val ROW_X            = @{ 75, 150, 225 }
+val VISUAL_X_SPEED   = 0.18
+val DROID_SPEED_INIT = 0.08
+val DOT_COLORS       = @{
+    top    = @{r=240, g=220, b=50},
+    bottom = @{r=60,  g=200, b=80},
+    left   = @{r=60,  g=120, b=220},
+    right  = @{r=220, g=80,  b=160},
+}
 
-;; reduce lives, trigger screenshake, signal :dead globally
+var lives         = 3
+var score         = 0
+var droids_killed = 0
+var shake_frames  = 0
+var player_row    = 2
+var visual_x      = ROW_X[2]
+var droid_speed   = DROID_SPEED_INIT
+
 func take_life () {
     set lives = (lives - 1)
     set shake_frames = 20
     if (lives <= 0) {
-		`play_sound("sounds/lose.wav")`
+        `play_sound("sounds/lose.wav")`
         emit[:global](:dead)
     } else {
         `play_sound("sounds/damage.wav")`
     }
 }
 
-;; remove matching dot from droid in player row, returns true if hit
 func try_hit_dot (droid_pool, dot_key) {
     var hit       = false
     var destroyed = false
@@ -42,38 +53,112 @@ func try_hit_dot (droid_pool, dot_key) {
                 set t.pub         = nil
                 set score         = (score + 1)
                 set droids_killed = (droids_killed + 1)
-				set destroyed     = true
-				`check_speed_bump()`
+                set destroyed     = true
+                `check_speed_bump()`
             }
         }
     }
-    ;; play sound once regardless of how many dots/droids matched
     if (hit && destroyed) {
         `play_sound("sounds/destroy.wav")`
     } else {
-        if hit {
-			`play_sound("sounds/hit.wav")`
-        }
+        if hit { `play_sound("sounds/hit.wav")` }
     }
     hit
 }
 
-;; nil pub and toggle off all tasks in pool
-func clear_droids (droid_pool) {
+func draw_scene (droid_pool, ox, oy) {
+    pico.zet.color.draw @{r=20, g=20, b=20}
+    pico.output.draw.rect @{ '!', x=0, y=0, w=300, h=400, anchor='NW' }
+
+    loop i in 3 {
+        pico.zet.color.draw(
+            if (i == player_row) => @{r=60, g=60, b=100} => @{r=40, g=40, b=40}
+        )
+        pico.output.draw.rect @{
+            '!', x=((ROW_X[i] + ox) - 25), y=oy, w=50, h=400, anchor='NW'
+        }
+    }
+
     loop _,t in droid_pool {
-        set t.pub = nil
-        toggle t(false)
+        val info = t.pub
+        if info {
+            val xx = ((ROW_X[info.row] + ox) - (BLOCK / 2))
+            val yy = (info.yy + oy)
+            val ds = (BLOCK / 5)
+
+            pico.zet.color.draw @{r=180, g=40, b=40}
+            pico.output.draw.rect @{ '!', x=xx, y=yy, w=BLOCK, h=BLOCK, anchor='NW' }
+
+            if info.dots.top {
+                pico.zet.color.draw(DOT_COLORS.top)
+                pico.output.draw.oval @{ '!', x=(xx+(BLOCK/2)), y=(yy+ds), w=ds, h=ds }
+            }
+            if info.dots.bottom {
+                pico.zet.color.draw(DOT_COLORS.bottom)
+                pico.output.draw.oval @{ '!', x=(xx+(BLOCK/2)), y=(yy+(BLOCK-ds)), w=ds, h=ds }
+            }
+            if info.dots.left {
+                pico.zet.color.draw(DOT_COLORS.left)
+                pico.output.draw.oval @{ '!', x=(xx+ds), y=(yy+(BLOCK/2)), w=ds, h=ds }
+            }
+            if info.dots.right {
+                pico.zet.color.draw(DOT_COLORS.right)
+                pico.output.draw.oval @{ '!', x=(xx+(BLOCK-ds)), y=(yy+(BLOCK/2)), w=ds, h=ds }
+            }
+        }
+    }
+
+    pico.zet.color.draw 'white'
+    pico.output.draw.rect @{
+        '!', x=((visual_x + ox) - (BLOCK/2)), y=(PLAYER_Y + oy),
+        w=BLOCK, h=BLOCK, anchor='NW'
     }
 }
 
-;; ============================================================
-;; PATTERN 4 - Dispatching Hierarchies
-;; Droid does not draw itself — it publishes state via pub.
-;; Compositor owns all rendering and dispatches draw calls
-;; by iterating the pool. Droids are passive data providers.
-;; ============================================================
+func draw_hud (elapsed) {
+    pico.zet.color.draw 'white'
+    pico.output.draw.text(("LIVES: "  ++ lives),         @{'!', x=10,  y=10,  h=12, anchor='NW'})
+    pico.output.draw.text(("SCORE: "  ++ score),         @{'!', x=160, y=10,  h=12, anchor='NW'})
+    pico.output.draw.text(("KILLED: " ++ droids_killed), @{'!', x=10,  y=25,  h=10, anchor='NW'})
+    pico.output.draw.text(`fmt_time(elapsed)`,            @{'!', x=150, y=385, h=12})
 
-;; falls down one lane, publishes position+dots for compositor
+    pico.zet.color.draw(DOT_COLORS.top)
+    pico.output.draw.text("W", @{'!', x=5,  y=375, h=10, anchor='NW'})
+    pico.zet.color.draw(DOT_COLORS.bottom)
+    pico.output.draw.text("S", @{'!', x=18, y=375, h=10, anchor='NW'})
+    pico.zet.color.draw(DOT_COLORS.left)
+    pico.output.draw.text("A", @{'!', x=31, y=375, h=10, anchor='NW'})
+    pico.zet.color.draw(DOT_COLORS.right)
+    pico.output.draw.text("D", @{'!', x=44, y=375, h=10, anchor='NW'})
+    pico.zet.color.draw 'white'
+    pico.output.draw.text("← → move   SPACE=clear row", @{'!', x=150, y=375, h=9})
+}
+
+func draw_overlay_dim () {
+    pico.zet.alpha(180)
+    pico.zet.color.draw @{r=0, g=0, b=0}
+    pico.output.draw.rect @{ '!', x=0, y=0, w=300, h=400, anchor='NW' }
+    pico.zet.alpha(255)
+}
+
+func Shake () {
+    set pub = @{ x=0, y=0 }
+    par {
+        every _,_ in :clock {
+            if (shake_frames > 0) {
+                set shake_frames = (shake_frames - 1)
+                set pub = @{ x=`math.random(-4,4)`, y=`math.random(-4,4)` }
+            } else {
+                set pub = @{ x=0, y=0 }
+            }
+        }
+    } with {
+        every _,ms in :clock {
+            set visual_x = (visual_x + ((ROW_X[player_row] - visual_x) * VISUAL_X_SPEED))
+        }
+    }
+}
+
 func Droid (row) {
     var yy   = SPAWN_Y
     var dots = @{}
@@ -86,11 +171,11 @@ func Droid (row) {
     do :droid_done {
         every _,ms in :clock {
             if (pub != nil) {
-                set yy = (yy + (ms * droid_speed))
+                set yy  = (yy + (ms * droid_speed))
                 set pub = @{ row=row, yy=yy, dots=dots }
                 if (yy >= FLOOR_Y) {
                     set pub = nil
-                    if (game_active) { take_life() }
+                    take_life()
                     escape(:droid_done)
                 }
             } else {
@@ -100,339 +185,123 @@ func Droid (row) {
     }
 }
 
-;; ============================================================
-;; PATTERN 2 - Lifespan Hierarchies
-;; Droids are spawned into a pool (tasks()) scoped to main.
-;; Natural termination via escape(:droid_done) removes them
-;; from the pool automatically — no manual cleanup needed
-;; except on game reset where we toggle them off explicitly.
-;; ============================================================
-
-;; spawns a droid into the pool every second while playing
 func Spawner (droid_pool) {
     loop {
         await @1
-        if (game_active) {
-            spawn [droid_pool] Droid(`math.random(1,3)`)
-        }
+        spawn [droid_pool] Droid(`math.random(1,3)`)
     }
 }
 
-;; handles all player key input, signals :zap to pool
 func Zapper (droid_pool) {
     loop {
         val e = await(:key.dn)
-        if (game_active) {
-            ifs {
-                ;; space nukes all droids in current row
-                e.key == 'Space' => {
-					var hit = false
-					loop _,t in droid_pool {
-						val info = t.pub
-						if (info && (info.row == player_row)) {
-							set t.pub         = nil
-							set score         = (score + 5)
-							set droids_killed = (droids_killed + 1)
-							set hit           = true
-							`check_speed_bump()`
-						}
-					}
-					if hit {
-						`play_sound("sounds/destroy.wav")`
-					}
-				}
-                ;; wasd attack matching dot or lose a life
-                e.key == 'W' => {
-                    if !(try_hit_dot(droid_pool, 'top'))    { take_life() }
-                }
-                e.key == 'S' => {
-                    if !(try_hit_dot(droid_pool, 'bottom')) { take_life() }
-                }
-                e.key == 'A' => {
-                    if !(try_hit_dot(droid_pool, 'left'))   { take_life() }
-                }
-                e.key == 'D' => {
-                    if !(try_hit_dot(droid_pool, 'right'))  { take_life() }
-                }
-                ;; arrow keys move the player between rows
-                e.key == 'Left' => {
-                    if (player_row > 1) {
-                        set player_row = (player_row - 1)
+        ifs {
+            e.key == 'Space' => {
+                var hit = false
+                loop _,t in droid_pool {
+                    val info = t.pub
+                    if (info && (info.row == player_row)) {
+                        set t.pub         = nil
+                        set score         = (score + 5)
+                        set droids_killed = (droids_killed + 1)
+                        set hit           = true
+                        `check_speed_bump()`
                     }
                 }
-                e.key == 'Right' => {
-                    if (player_row < 3) {
-                        set player_row = (player_row + 1)
-                    }
-                }
+                if hit { `play_sound("sounds/destroy.wav")` }
             }
+            e.key == 'W' => { if !(try_hit_dot(droid_pool, 'top'))    { take_life() } }
+            e.key == 'S' => { if !(try_hit_dot(droid_pool, 'bottom')) { take_life() } }
+            e.key == 'A' => { if !(try_hit_dot(droid_pool, 'left'))   { take_life() } }
+            e.key == 'D' => { if !(try_hit_dot(droid_pool, 'right'))  { take_life() } }
+            e.key == 'Left'  => { if (player_row > 1) { set player_row = (player_row - 1) } }
+            e.key == 'Right' => { if (player_row < 3) { set player_row = (player_row + 1) } }
         }
     }
 }
 
-;; ============================================================
-;; PATTERN 4 - Dispatching Hierarchies (continued)
-;; Compositor is the single dispatcher for all rendering.
-;; Clock branch handles physics (shake, lerp).
-;; Draw branch handles visuals (scene, hud, overlay).
-;; ============================================================
-
-func Compositor (droid_pool) {
-    par {
-        ;; clock: screenshake countdown and player position lerp
-        every _,ms in :clock {
-            if (shake_frames > 0) {
-                set shake_frames = (shake_frames - 1)
-                set shake_x = `math.random(-4, 4)`
-                set shake_y = `math.random(-4, 4)`
-            } else {
-                set shake_x = 0
-                set shake_y = 0
-            }
-            ;; ease visual_x toward target row position
-            set visual_x = (visual_x + ((ROW_X[player_row] - visual_x) * VISUAL_X_SPEED))
+func WaitScreen () {
+    par_or {
+        every :draw {
+            pico.zet.color.draw @{r=20, g=20, b=20}
+            pico.output.draw.rect @{ '!', x=0, y=0, w=300, h=400, anchor='NW' }
+            draw_overlay_dim()
+            pico.zet.color.draw 'white'
+            pico.output.draw.text("DROIDLAND MAGE",       @{'!', x=150, y=120, h=20})
+            pico.output.draw.text("Press Space to Start", @{'!', x=150, y=155, h=13})
+            pico.zet.color.draw(DOT_COLORS.top)
+            pico.output.draw.text("Yellow dot = W", @{'!', x=150, y=200, h=11})
+            pico.zet.color.draw(DOT_COLORS.bottom)
+            pico.output.draw.text("Green dot  = S", @{'!', x=150, y=218, h=11})
+            pico.zet.color.draw(DOT_COLORS.left)
+            pico.output.draw.text("Blue dot   = A", @{'!', x=150, y=236, h=11})
+            pico.zet.color.draw(DOT_COLORS.right)
+            pico.output.draw.text("Pink dot   = D", @{'!', x=150, y=254, h=11})
+            pico.zet.color.draw 'white'
+            pico.output.draw.text("Space = destroy whole row", @{'!', x=150, y=272, h=11})
+            pico.output.draw.text("Wrong key = lose a life!",  @{'!', x=150, y=290, h=11})
         }
     } with {
-        ;; draw: render full scene every frame
-        every :draw {
-            val ox = shake_x
-            val oy = shake_y
-
-            ;; background
-            pico.zet.color.draw @{r=20, g=20, b=20}
-            pico.output.draw.rect @{
-                '!', x=0, y=0, w=300, h=400, anchor='NW'
-            }
-
-            ;; lanes — highlight active player lane
-            loop i in 3 {
-                pico.zet.color.draw(
-                    if (i == player_row)
-                        => @{r=60, g=60, b=100}
-                        => @{r=40, g=40, b=40}
-                )
-                pico.output.draw.rect @{
-                    '!', x=((ROW_X[i] + ox) - 25), y=oy,
-                    w=50, h=400, anchor='NW'
-                }
-            }
-
-            ;; dispatcher: iterate pool and render each live droid
-            loop _,t in droid_pool {
-                val info = t.pub
-                if info {
-                    val xx = ((ROW_X[info.row] + ox) - (BLOCK / 2))
-                    val yy = (info.yy + oy)
-                    val ds = (BLOCK / 5)
-
-                    pico.zet.color.draw @{r=180, g=40, b=40}
-                    pico.output.draw.rect @{
-                        '!', x=xx, y=yy, w=BLOCK, h=BLOCK, anchor='NW'
-                    }
-
-                    if info.dots.top {
-                        pico.zet.color.draw(DOT_COLORS.top)
-                        pico.output.draw.oval @{
-                            '!', x=(xx + (BLOCK / 2)),
-                            y=(yy + ds), w=ds, h=ds
-                        }
-                    }
-                    if info.dots.bottom {
-                        pico.zet.color.draw(DOT_COLORS.bottom)
-                        pico.output.draw.oval @{
-                            '!', x=(xx + (BLOCK / 2)),
-                            y=(yy + (BLOCK - ds)), w=ds, h=ds
-                        }
-                    }
-                    if info.dots.left {
-                        pico.zet.color.draw(DOT_COLORS.left)
-                        pico.output.draw.oval @{
-                            '!', x=(xx + ds),
-                            y=(yy + (BLOCK / 2)), w=ds, h=ds
-                        }
-                    }
-                    if info.dots.right {
-                        pico.zet.color.draw(DOT_COLORS.right)
-                        pico.output.draw.oval @{
-                            '!', x=(xx + (BLOCK - ds)),
-                            y=(yy + (BLOCK / 2)), w=ds, h=ds
-                        }
-                    }
-                }
-            }
-
-            ;; player block at lerped visual position
-            pico.zet.color.draw 'white'
-            pico.output.draw.rect @{
-                '!', x=((visual_x + ox) - (BLOCK / 2)),
-                y=(PLAYER_Y + oy),
-                w=BLOCK, h=BLOCK, anchor='NW'
-            }
-
-            ;; hud: lives, score, kills, timer
-            pico.zet.color.draw 'white'
-            pico.output.draw.text(
-                ("LIVES: " ++ lives),
-                @{'!', x=10, y=10, h=12, anchor='NW'}
-            )
-            pico.output.draw.text(
-                ("SCORE: " ++ score),
-                @{'!', x=160, y=10, h=12, anchor='NW'}
-            )
-            pico.output.draw.text(
-                ("KILLED: " ++ droids_killed),
-                @{'!', x=10, y=25, h=10, anchor='NW'}
-            )
-            pico.output.draw.text(
-                `fmt_time(elapsed_ms)`,
-                @{'!', x=150, y=385, h=12}
-            )
-
-            ;; color-coded key legend
-            pico.zet.color.draw(DOT_COLORS.top)
-            pico.output.draw.text("W", @{'!', x=5,  y=375, h=10, anchor='NW'})
-            pico.zet.color.draw(DOT_COLORS.bottom)
-            pico.output.draw.text("S", @{'!', x=18, y=375, h=10, anchor='NW'})
-            pico.zet.color.draw(DOT_COLORS.left)
-            pico.output.draw.text("A", @{'!', x=31, y=375, h=10, anchor='NW'})
-            pico.zet.color.draw(DOT_COLORS.right)
-            pico.output.draw.text("D", @{'!', x=44, y=375, h=10, anchor='NW'})
-            pico.zet.color.draw 'white'
-            pico.output.draw.text(
-                "← → move   SPACE=clear row",
-                @{'!', x=150, y=375, h=9}
-            )
-
-            ;; translucent overlay when not playing
-            if !game_active {
-                pico.zet.alpha(180)
-                pico.zet.color.draw @{r=0, g=0, b=0}
-                pico.output.draw.rect @{
-                    '!', x=0, y=0, w=300, h=400, anchor='NW'
-                }
-                pico.zet.alpha(255)
-
-                if (game_state == 'waiting') {
-                    pico.zet.color.draw 'white'
-                    pico.output.draw.text(
-                        "DROIDLAND MAGE",
-                        @{'!', x=150, y=120, h=20}
-                    )
-                    pico.output.draw.text(
-                        "Press Space to Start",
-                        @{'!', x=150, y=155, h=13}
-                    )
-                    pico.zet.color.draw(DOT_COLORS.top)
-                    pico.output.draw.text(
-                        "Yellow dot = W",
-                        @{'!', x=150, y=200, h=11}
-                    )
-                    pico.zet.color.draw(DOT_COLORS.bottom)
-                    pico.output.draw.text(
-                        "Green dot  = S",
-                        @{'!', x=150, y=218, h=11}
-                    )
-                    pico.zet.color.draw(DOT_COLORS.left)
-                    pico.output.draw.text(
-                        "Blue dot   = A",
-                        @{'!', x=150, y=236, h=11}
-                    )
-                    pico.zet.color.draw(DOT_COLORS.right)
-                    pico.output.draw.text(
-                        "Pink dot   = D",
-                        @{'!', x=150, y=254, h=11}
-                    )
-                    pico.zet.color.draw 'white'
-                    pico.output.draw.text(
-                        "Space = destroy whole row",
-                        @{'!', x=150, y=272, h=11}
-                    )
-                    pico.output.draw.text(
-                        "Wrong key = lose a life!",
-                        @{'!', x=150, y=290, h=11}
-                    )
-                } else {
-                    if (game_state == 'dead') {
-                        ;; ============================================
-                        ;; PATTERN 5 - Continuation Passing
-                        ;; GameLoop passes final stats as a table to
-                        ;; the death screen via the :dead_stats event.
-                        ;; The overlay reads stats from the event
-                        ;; payload — it does not pull from globals.
-                        ;; This decouples the death screen from the
-                        ;; game state entirely.
-                        ;; ============================================
-                        pico.zet.color.draw @{r=220, g=50, b=50}
-                        pico.output.draw.text(
-                            "GAME OVER",
-                            @{'!', x=150, y=130, h=26}
-                        )
-                        pico.zet.color.draw 'white'
-                        pico.output.draw.text(
-                            ("Time:   " ++ `fmt_time(elapsed_ms)`),
-                            @{'!', x=150, y=190, h=14}
-                        )
-                        pico.output.draw.text(
-                            ("Score:  " ++ score),
-                            @{'!', x=150, y=212, h=14}
-                        )
-                        pico.output.draw.text(
-                            ("Killed: " ++ droids_killed),
-                            @{'!', x=150, y=234, h=14}
-                        )
-                    }
-                }
-            }
-        }
+        await(:key.dn, 'Space')
     }
 }
 
-;; ============================================================
-;; PATTERN 1 - Finite State Machines
-;; GameLoop implements waiting->playing->dead in direct
-;; sequential style with no state variables — just await
-;; and par_or. This is the Atmos equivalent of the Céu
-;; double-click and Bomber patterns from the paper.
-;;
-;; PATTERN 5 - Continuation Passing
-;; On death, GameLoop captures final stats into a table and
-;; emits them as :dead_stats. The result is that the death
-;; screen receives its data as a continuation payload rather
-;; than reading mutable globals — decoupling game logic from
-;; presentation, analogous to the Story->Credits pattern.
-;; ============================================================
-func GameLoop (droid_pool) {
-    ;; STATE: waiting — show start screen until space
-    set game_state  = 'waiting'
-    set game_active = false
-    await(:key.dn, 'Space')
-    
+func GameSession (droid_pool) {
+    set lives         = 3
+    set score         = 0
+    set droids_killed = 0
+    set shake_frames  = 0
+    set player_row    = 2
+    set visual_x      = ROW_X[2]
+    set droid_speed   = DROID_SPEED_INIT
+
     `play_sound("sounds/start.wav")`
 
-    ;; STATE: playing — race clock against :dead signal
-    set game_state  = 'playing'
-    set game_active = true
+    spawn [droid_pool] Zapper(droid_pool)
+    spawn [droid_pool] Spawner(droid_pool)
+
+    val t_start = `pico.env.now()`
 
     par_or {
-        every _,ms in :clock {
-            set elapsed_ms = (elapsed_ms + ms)
+        par {
+            pin shake = spawn Shake()
+            every :draw {
+                val s = shake.pub
+                draw_scene(droid_pool, s.x, s.y)
+                draw_hud((`pico.env.now()` - t_start))
+            }
         }
     } with {
         await(:dead)
     }
 
-    ;; STATE: dead — clear field, show results
-    clear_droids(droid_pool)
-    set game_active = false
-    set game_state  = 'dead'
+    (`pico.env.now()` - t_start)
 }
 
-;; wire all concurrent tasks — structured parallel composition
-pin droids = tasks()
+func DeathScreen (elapsed) {
+    par_or {
+        every :draw {
+            pico.zet.color.draw @{r=20, g=20, b=20}
+            pico.output.draw.rect @{ '!', x=0, y=0, w=300, h=400, anchor='NW' }
+            draw_overlay_dim()
+            pico.zet.color.draw @{r=220, g=50, b=50}
+            pico.output.draw.text("GAME OVER", @{'!', x=150, y=130, h=26})
+            pico.zet.color.draw 'white'
+            pico.output.draw.text(("Time:   " ++ `fmt_time(elapsed)`), @{'!', x=150, y=190, h=14})
+            pico.output.draw.text(("Score:  " ++ score),               @{'!', x=150, y=212, h=14})
+            pico.output.draw.text(("Killed: " ++ droids_killed),       @{'!', x=150, y=234, h=14})
+            pico.output.draw.text("Press Space to Restart",            @{'!', x=150, y=270, h=13})
+        }
+    } with {
+        await(:key.dn, 'Space')
+    }
+}
 
-spawn Compositor(droids)
-spawn Zapper(droids)
-spawn Spawner(droids)
-spawn GameLoop(droids)
-
-await(false)
+loop {
+    await WaitScreen()
+    do {
+        pin droids = tasks()
+        val elapsed = await GameSession(droids)
+        await DeathScreen(elapsed)
+    }
+}
