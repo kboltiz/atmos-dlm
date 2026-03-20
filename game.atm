@@ -1,11 +1,11 @@
 func GameSession () {
-    set lives         = 3
-    set score         = 0
-    set droids_killed = 0
-    set shake_frames  = 0
-    set player_row    = 2
-    set visual_x      = ROW_X[2]
-    set droid_speed   = DROID_SPEED_INIT
+    var lives         = 3
+    var score         = 0
+    var droids_killed = 0
+    var shake_frames  = 0
+    var player_row    = 2
+    var visual_x      = ROW_X[2]
+    var droid_speed   = DROID_SPEED_INIT
 
     play_sound("sounds/start.wav")
 
@@ -130,7 +130,7 @@ func GameSession () {
     func Shake () {
         set pub = @{ x=0.0, y=0.0 }
         par {
-            every _,_ in :clock {
+            every :clock {
                 if (shake_frames > 0) {
                     set shake_frames = (shake_frames - 1)
                     set pub = @{
@@ -157,60 +157,58 @@ func GameSession () {
         }
         set pub = @{ row=row, yy=yy, dots=dots }
 
-        do :droid_done {
-            every _,ms in :clock {
-                if (pub != nil) {
-                    set yy  = (yy + (ms * droid_speed))
-                    set pub = @{ row=row, yy=yy, dots=dots }
-                    if (yy >= FLOOR_Y) {
-                        set pub = nil
-                        take_life()
-                        escape(:droid_done)
-                    }
-                } else {
-                    escape(:droid_done)
+        every _,ms in :clock {
+            if (pub != nil) {
+                set yy  = (yy + (ms * droid_speed))
+                set pub = @{ row=row, yy=yy, dots=dots }
+                if (yy >= FLOOR_Y) {
+                    set pub = nil
+                    take_life()
+                    return()        ;; return escapes task as a whole
                 }
+            } else {
+                return()
             }
         }
     }
 
-    func Spawner (droids) {
-        every @1 {
-            spawn [droids] Droid(math.random(1,3))
-        }
-    }
-
-    func Zapper (droids) {
-        every e in :key.dn {
-            match e.key {
-                :Space => {
-                    var hit = false
-                    loop _,t in droids {
-                        val info = t.pub
-                        if (info && (info.row == player_row)) {
-                            set t.pub         = nil
-                            set score         = (score + 5)
-                            set droids_killed = (droids_killed + 1)
-                            set hit           = true
-                            check_speed_bump()
-                        }
-                    }
-                    if hit { play_sound("sounds/destroy.wav") }
-                }
-                :W => { if !(try_hit_dot(droids, :top))    { take_life() } }
-                :S => { if !(try_hit_dot(droids, :bottom)) { take_life() } }
-                :A => { if !(try_hit_dot(droids, :left))   { take_life() } }
-                :D => { if !(try_hit_dot(droids, :right))  { take_life() } }
-                :Left  => { if (player_row > 1) { set player_row = (player_row - 1) } }
-                :Right => { if (player_row < 3) { set player_row = (player_row + 1) } }
-            }
-        }
-    }
-
+    ;; moved up (shared by spawner/zapper, which I inlined)
     pin droids = tasks()
 
-    spawn [droids] Zapper(droids)
-    spawn [droids] Spawner(droids)
+    spawn {
+        par {
+            ;; spawner
+            every @1 {
+                spawn [droids] Droid(math.random(1,3))
+            }
+        } with {
+            ;; zapper
+            every e in :key.dn {
+                match e.key {
+                    :Space => {
+                        var hit = false
+                        loop _,t in droids {
+                            val info = t.pub
+                            if (info && (info.row == player_row)) {
+                                set t.pub         = nil
+                                set score         = (score + 5)
+                                set droids_killed = (droids_killed + 1)
+                                set hit           = true
+                                check_speed_bump()
+                            }
+                        }
+                        if hit { play_sound("sounds/destroy.wav") }
+                    }
+                    :W => { if !(try_hit_dot(droids, :top))    { take_life() } }
+                    :S => { if !(try_hit_dot(droids, :bottom)) { take_life() } }
+                    :A => { if !(try_hit_dot(droids, :left))   { take_life() } }
+                    :D => { if !(try_hit_dot(droids, :right))  { take_life() } }
+                    :Left  => { if (player_row > 1) { set player_row = (player_row - 1) } }
+                    :Right => { if (player_row < 3) { set player_row = (player_row + 1) } }
+                }
+            }
+        }
+    }
 
     val t_start = env.now
 

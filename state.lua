@@ -1,3 +1,5 @@
+-- more magic numbers (probably could simplify with %)
+
 ROW_X            = { 60, 135, 210 }
 SPAWN_Y          = -30
 FLOOR_Y          = 330
@@ -23,12 +25,27 @@ droids_killed = 0
 shake_frames  = 0
 droid_speed   = DROID_SPEED_INIT
 
+-- all above, could return as a table
+--[[
+
+-- here
+local M = {}
+...                     -- fills M
+return M
+
+-- main
+val G = require "local" -- G=M
+]]
+
+
 function check_speed_bump ()
     if droids_killed > 0 and droids_killed % 5 == 0 then
         droid_speed = droid_speed + 0.01
     end
 end
 
+-- just call output.sound there (simplify!)
+-- why all this checks?
 function play_sound (path)
     local f = io.open(path, "r")
     if f then

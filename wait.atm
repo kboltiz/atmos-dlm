@@ -1,32 +1,50 @@
-func WaitScreen () {
+func () {   ;; can be anonymous if you will
     watching :key.dn, :Space {
+        var space = true
+        spawn {
+            every @.500 {
+                set space = !space      ;; just to play ;)
+            }
+        }
         every :draw {
             pico.zet.color.draw @{r=20, g=20, b=20}
-            pico.output.draw.rect @{ '%', x=0.0, y=0.0, w=1.0, h=1.0, anchor='NW' }
+            pico.output.draw.rect @{ '%', x=0.5, y=0.5, w=1.0, h=1.0 }  ;; C
 
             pico.zet.alpha(180)
             pico.zet.color.draw @{r=0, g=0, b=0}
-            pico.output.draw.rect @{ '%', x=0.0, y=0.0, w=1.0, h=1.0, anchor='NW' }
+            pico.output.draw.rect @{ '%', x=0.5, y=0.5, w=1.0, h=1.0 }  ;; C
             pico.zet.alpha(255)
 
+            ;; why not using meaninful %s?
+
             pico.zet.color.draw :white
-            pico.output.draw.text("DROIDLAND MAGE",       @{ '%', x=0.5,  y=0.3,   h=0.05   })
-            pico.output.draw.text("Press Space to Start", @{ '%', x=0.5,  y=0.39,  h=0.0325 })
+            pico.output.draw.text("DROIDLAND MAGE",
+                @{ '%', x=0.5,  y=0.3, h=0.05  })
+
+            if space {
+                pico.zet.color.draw :white
+                pico.output.draw.text("Press Space to Start",
+                    @{ '%', x=0.5,  y=0.39, h=0.035 })
+            }
 
             pico.zet.color.draw(DOT_COLORS.top)
-            pico.output.draw.text("Yellow dot = W", @{ '%', x=0.5, y=0.5,   h=0.0275 })
+            pico.output.draw.text("Yellow dot = W",
+                @{ '%', x=0.5, y=0.50, h=0.03 })        ;; 0.05 y spacing
             pico.zet.color.draw(DOT_COLORS.bottom)
-            pico.output.draw.text("Green dot  = S", @{ '%', x=0.5, y=0.545, h=0.0275 })
+            pico.output.draw.text("Green dot  = S",
+                @{ '%', x=0.5, y=0.55, h=0.03 })
             pico.zet.color.draw(DOT_COLORS.left)
-            pico.output.draw.text("Blue dot   = A", @{ '%', x=0.5, y=0.59,  h=0.0275 })
+            pico.output.draw.text("Blue dot   = A",
+                @{ '%', x=0.5, y=0.60, h=0.03 })
             pico.zet.color.draw(DOT_COLORS.right)
-            pico.output.draw.text("Pink dot   = D", @{ '%', x=0.5, y=0.635, h=0.0275 })
+            pico.output.draw.text("Pink dot   = D",
+                @{ '%', x=0.5, y=0.65, h=0.03 })
 
             pico.zet.color.draw :white
-            pico.output.draw.text("Space = destroy whole row", @{ '%', x=0.5, y=0.68,  h=0.0275 })
-            pico.output.draw.text("Wrong key = lose a life!",  @{ '%', x=0.5, y=0.725, h=0.0275 })
+            pico.output.draw.text("Space = destroy whole row",
+                @{ '%', x=0.5, y=0.70, h=0.03 })
+            pico.output.draw.text("Wrong key = lose a life!",
+                @{ '%', x=0.5, y=0.75, h=0.03 })
         }
     }
 }
-
-WaitScreen
