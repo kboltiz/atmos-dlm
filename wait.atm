@@ -1,0 +1,32 @@
+func WaitScreen () {
+    watching :key.dn, :Space {
+        every :draw {
+            pico.zet.color.draw @{r=20, g=20, b=20}
+            pico.output.draw.rect @{ '%', x=0.0, y=0.0, w=1.0, h=1.0, anchor='NW' }
+
+            pico.zet.alpha(180)
+            pico.zet.color.draw @{r=0, g=0, b=0}
+            pico.output.draw.rect @{ '%', x=0.0, y=0.0, w=1.0, h=1.0, anchor='NW' }
+            pico.zet.alpha(255)
+
+            pico.zet.color.draw :white
+            pico.output.draw.text("DROIDLAND MAGE",       @{ '!', x=150, y=120, h=20 })
+            pico.output.draw.text("Press Space to Start", @{ '!', x=150, y=156, h=13 })
+
+            pico.zet.color.draw(DOT_COLORS.top)
+            pico.output.draw.text("Yellow dot = W", @{ '!', x=150, y=200, h=11 })
+            pico.zet.color.draw(DOT_COLORS.bottom)
+            pico.output.draw.text("Green dot  = S", @{ '!', x=150, y=218, h=11 })
+            pico.zet.color.draw(DOT_COLORS.left)
+            pico.output.draw.text("Blue dot   = A", @{ '!', x=150, y=236, h=11 })
+            pico.zet.color.draw(DOT_COLORS.right)
+            pico.output.draw.text("Pink dot   = D", @{ '!', x=150, y=254, h=11 })
+
+            pico.zet.color.draw :white
+            pico.output.draw.text("Space = destroy whole row", @{ '!', x=150, y=272, h=11 })
+            pico.output.draw.text("Wrong key = lose a life!",  @{ '!', x=150, y=290, h=11 })
+        }
+    }
+}
+
+WaitScreen
