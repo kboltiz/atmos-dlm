@@ -6,8 +6,8 @@ val Death = require "death"
 
 require "state"
 
-pico.zet.window @{ title="Droidland Mage", dim=@{'!', w=300, h=400} }
-pico.zet.view   @{ dim=@{'!', w=300, h=400}, grid=false }
+pico.zet.window @{ title="Droidland Mage" }
+pico.zet.dim @{'!', w=300, h=400 }              ;; same w/h, no grid
 pico.zet.expert(true, 40)
 
 loop {
